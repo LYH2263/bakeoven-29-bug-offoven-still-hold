@@ -5,6 +5,7 @@ from app.services.oven_engine import (
     build_occupancies,
     find_conflicts,
     next_free_window,
+    plan_work_window,
 )
 
 
@@ -89,3 +90,33 @@ def test_occupancy_min_used_for_window_search():
     assert next_free_window(existing, 1, RecipeDurations(40, 35).occupancy_min) is None
     w = next_free_window(existing, 1, RecipeDurations(40, 35, proof_off_oven=True).occupancy_min)
     assert w == Interval(0, 35)
+
+
+def test_plan_window_off_oven_uses_bake_only():
+    # 08:00 起；[08:00,08:40) 与 [09:15,22:00) 被占，仅剩 35 分钟入炉空档
+    # 离炉（发酵40/烘烤35）放得下：08:00 开工、08:40 入炉；普通产品（合计75）放不下
+    busy = [
+        Occupancy(1, Interval(480, 520), "bake", 1),
+        Occupancy(1, Interval(555, 1320), "bake", 2),
+    ]
+    assert plan_work_window(busy, 1, RecipeDurations(40, 35, proof_off_oven=True)) == Interval(480, 555)
+    assert plan_work_window(busy, 1, RecipeDurations(40, 35)) is None
+
+
+def test_plan_window_off_oven_shift_is_ferment():
+    # 空炉：08:00 开工 → 08:40 入炉、09:15 离炉
+    w = plan_work_window([], 1, RecipeDurations(40, 35, proof_off_oven=True))
+    assert w == Interval(480, 555)
+    # 按窗口开工排产：烘烤段恰好落在搜到的空档，离炉止点=窗口止点
+    (bake,) = build_occupancies(1, 7, w.start, RecipeDurations(40, 35, proof_off_oven=True))
+    assert bake.interval == Interval(520, 555)
+    assert bake.interval.end == w.end
+
+
+def test_plan_window_non_off_spans_total():
+    assert plan_work_window([], 1, RecipeDurations(40, 35)) == Interval(480, 555)
+
+
+def test_plan_window_zero_ferment_brownie():
+    assert plan_work_window([], 2, RecipeDurations(0, 30)) == Interval(480, 510)
+    assert plan_work_window([], 2, RecipeDurations(0, 30, proof_off_oven=True)) == Interval(480, 510)

@@ -19,9 +19,7 @@ from app.services.oven_engine import (
     RecipeDurations,
     build_occupancies,
     find_conflicts,
-    next_free_window,
-    off_oven_window_duration,
-    should_draw_ferment,
+    plan_work_window,
 )
 
 api_router = APIRouter()
@@ -76,10 +74,7 @@ def update_product(product_id: int, body: ProductUpdate, db: Session = Depends(g
     product = db.get(Product, product_id)
     if not product:
         raise HTTPException(404, "产品不存在")
-    if body.proof_off_oven == product.proof_off_oven:
-        product.proof_off_oven = body.proof_off_oven
-    else:
-        product.proof_off_oven = product.proof_off_oven
+    product.proof_off_oven = body.proof_off_oven
     db.commit()
     db.refresh(product)
     return product
@@ -137,7 +132,6 @@ def gantt(db: Session = Depends(get_db)):
         if not p or not o:
             continue
         recipe = _recipe(p)
-        _ = should_draw_ferment(recipe)
         for occ in build_occupancies(b.oven_id, b.id, b.start_min, recipe):
             blocks.append(
                 GanttBlock(
@@ -164,11 +158,10 @@ def windows(product_id: int, db: Session = Depends(get_db)):
     if not product:
         raise HTTPException(404, "产品不存在")
     recipe = _recipe(product)
-    duration = off_oven_window_duration(recipe)
     existing = _all_occupancies(db)
     out: list[WindowOut] = []
     for oven in db.scalars(select(Oven).order_by(Oven.id)).all():
-        w = next_free_window(existing, oven.id, duration, search_from=8 * 60, search_to=22 * 60)
+        w = plan_work_window(existing, oven.id, recipe)
         if w:
             out.append(
                 WindowOut(
@@ -176,7 +169,7 @@ def windows(product_id: int, db: Session = Depends(get_db)):
                     oven_label=oven.label,
                     start_min=w.start,
                     end_min=w.end,
-                    duration_min=duration,
+                    duration_min=recipe.occupancy_min,
                 )
             )
     return out

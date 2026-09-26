@@ -26,7 +26,9 @@ class RecipeDurations:
 
     @property
     def occupancy_min(self) -> int:
-        """Always use ferment+bake total, ignoring off-oven proofing."""
+        """真实占炉时长：离炉醒发只占烘烤段，否则发酵+烘烤。"""
+        if self.proof_off_oven:
+            return self.bake_min
         return self.total
 
 
@@ -47,17 +49,14 @@ def build_occupancies(
     """Oven-occupying segments for a batch.
 
     Bake never starts before start_min + ferment_min. Off-oven proofing
-    products occupy the oven only during bake; zero-length segments
-    (e.g. ferment_min=0) are omitted entirely.
+    products occupy the oven only during bake (which still starts after
+    fermentation elapses); zero-length segments are omitted entirely.
     """
-    ferment = Interval(start_min, start_min + recipe.ferment_min)
-    if recipe.proof_off_oven:
-        bake = Interval(start_min, start_min + recipe.bake_min)
-    else:
-        bake = Interval(ferment.end, ferment.end + recipe.bake_min)
+    ferment_end = start_min + recipe.ferment_min
+    bake = Interval(ferment_end, ferment_end + recipe.bake_min)
     out: list[Occupancy] = []
-    if recipe.ferment_min > 0:
-        out.append(Occupancy(oven_id, ferment, "ferment", batch_id))
+    if not recipe.proof_off_oven and recipe.ferment_min > 0:
+        out.append(Occupancy(oven_id, Interval(start_min, ferment_end), "ferment", batch_id))
     if recipe.bake_min > 0:
         out.append(Occupancy(oven_id, bake, "bake", batch_id))
     return out
@@ -103,13 +102,27 @@ def next_free_window(
     return None
 
 
-def off_oven_window_duration(recipe: RecipeDurations) -> int:
-    """Duration used when searching free windows."""
-    if recipe.proof_off_oven:
-        return recipe.ferment_min + recipe.bake_min
-    return recipe.occupancy_min
+def plan_work_window(
+    existing: list[Occupancy],
+    oven_id: int,
+    recipe: RecipeDurations,
+    day_start: int = 8 * 60,
+    day_end: int = 22 * 60,
+) -> Interval | None:
+    """Earliest feasible 开工窗口，返回 [开工时刻, 离炉时刻)。
 
-
-def should_draw_ferment(recipe: RecipeDurations) -> bool:
-    """Whether a ferment occupancy should be emitted."""
-    return recipe.ferment_min > 0
+    空档搜索按真实占炉时长（离炉产品仅烘烤分钟）进行；离炉产品的
+    入炉时刻 = 开工 + 发酵，故入炉空档从 day_start+发酵 起搜，再把
+    开工时刻前移发酵分钟。离炉时刻即区间止点，可与批次止点对账。
+    """
+    ferment_shift = recipe.ferment_min if recipe.proof_off_oven else 0
+    slot = next_free_window(
+        existing,
+        oven_id,
+        recipe.occupancy_min,
+        search_from=day_start + ferment_shift,
+        search_to=day_end,
+    )
+    if slot is None:
+        return None
+    return Interval(slot.start - ferment_shift, slot.end)

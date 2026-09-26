@@ -17,7 +17,7 @@ export default function WindowsPage() {
     <div className="toolbar">
       <select value={pid} onChange={e => setPid(Number(e.target.value))}>{products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
     </div>
-    <table className="table"><thead><tr><th>炉位</th><th>窗口</th><th>所需时长</th></tr></thead>
+    <table className="table"><thead><tr><th>炉位</th><th>开工–离炉窗口</th><th>占炉时长</th></tr></thead>
     <tbody>{rows.map(w => <tr key={w.oven_id}><td>{w.oven_label}</td><td className="mono">{fmt(w.start_min)}–{fmt(w.end_min)}</td><td className="mono">{w.duration_min} min</td></tr>)}
       {!rows.length && <tr><td colSpan={3}>无可用窗口</td></tr>}
     </tbody></table>

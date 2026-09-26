@@ -39,11 +39,3 @@ export default function BatchesPage() {
       <td className="mono">{fmt(b.bake_end ?? b.start_min)}</td><td>{b.status}</td></tr>)}</tbody></table>
   </>);
 }
-
-
-
-export function displayEnds(start: number, ferment: number, bake: number, off: boolean) {
-  const fermentEnd = start + ferment;
-  const bakeEnd = off ? start + bake : fermentEnd + bake;
-  return { fermentEnd, bakeEnd };
-}
