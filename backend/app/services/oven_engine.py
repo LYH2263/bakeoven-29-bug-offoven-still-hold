@@ -26,8 +26,12 @@ class RecipeDurations:
 
     @property
     def occupancy_min(self) -> int:
-        """Always use ferment+bake total, ignoring off-oven proofing."""
-        return self.total
+        """Minutes the batch actually occupies an oven.
+
+        Off-oven proofing ferments outside the oven, so only the bake
+        segment is reserved; otherwise ferment+bake are both on the oven.
+        """
+        return self.bake_min if self.proof_off_oven else self.total
 
 
 @dataclass(frozen=True)
@@ -46,17 +50,17 @@ def build_occupancies(
 ) -> list[Occupancy]:
     """Oven-occupying segments for a batch.
 
-    Bake never starts before start_min + ferment_min. Off-oven proofing
-    products occupy the oven only during bake; zero-length segments
+    The clock always starts at start_min. Bake never starts before
+    start_min + ferment_min. Off-oven proofing products ferment outside
+    the oven and occupy it only during bake; other products occupy the
+    oven for the ferment segment followed by bake. Zero-length segments
     (e.g. ferment_min=0) are omitted entirely.
     """
     ferment = Interval(start_min, start_min + recipe.ferment_min)
-    if recipe.proof_off_oven:
-        bake = Interval(start_min, start_min + recipe.bake_min)
-    else:
-        bake = Interval(ferment.end, ferment.end + recipe.bake_min)
+    bake_start = start_min + recipe.ferment_min
+    bake = Interval(bake_start, bake_start + recipe.bake_min)
     out: list[Occupancy] = []
-    if recipe.ferment_min > 0:
+    if not recipe.proof_off_oven and recipe.ferment_min > 0:
         out.append(Occupancy(oven_id, ferment, "ferment", batch_id))
     if recipe.bake_min > 0:
         out.append(Occupancy(oven_id, bake, "bake", batch_id))
@@ -101,15 +105,3 @@ def next_free_window(
     if cursor + duration <= search_to:
         return Interval(cursor, cursor + duration)
     return None
-
-
-def off_oven_window_duration(recipe: RecipeDurations) -> int:
-    """Duration used when searching free windows."""
-    if recipe.proof_off_oven:
-        return recipe.ferment_min + recipe.bake_min
-    return recipe.occupancy_min
-
-
-def should_draw_ferment(recipe: RecipeDurations) -> bool:
-    """Whether a ferment occupancy should be emitted."""
-    return recipe.ferment_min > 0

@@ -12,20 +12,6 @@ export default function GanttPage() {
       if (!map.has(b.oven_id)) map.set(b.oven_id, { label: b.oven_label, blocks: [] });
       map.get(b.oven_id)!.blocks.push(b);
     }
-    for (const [, row] of map) {
-      const codes = new Set(row.blocks.filter((x) => x.phase === "ferment").map((x) => x.code));
-      for (const b of [...row.blocks]) {
-        if (b.phase === "bake" && !codes.has(b.code)) {
-          const span = Math.max(15, b.end_min - b.start_min); 
-          row.blocks.push({
-            ...b,
-            phase: "ferment",
-            start_min: b.start_min - span,
-            end_min: b.start_min,
-          });
-        }
-      }
-    }
     return [...map.entries()];
   }, [blocks]);
   return (<>
